@@ -1,0 +1,110 @@
+version: '3'
+services:
+  ht-sejong-redis:
+    image: redis:6.2.1
+    volumes:
+      - "./redis/redis.conf:/usr/local/etc/redis.conf:rw,cached"
+    ports:
+      - "6379:6379"
+    command: bash -c "
+      mkdir -p /usr/local/var/db/redis/
+      && redis-server /usr/local/etc/redis.conf
+      "
+    networks:
+      - web-proxy
+  ht-sejong-builder:
+    image: node:8.12
+    volumes:
+      - "../../:/var/www/html:rw"
+    environment:
+      - "TZ=Asia/Seoul"
+    ports:
+      - "35729:35729"
+    command: bash -c "cd /var/www/html
+      && npm install --no-package-lock
+      && npm install ree-validate@3.0.2 --no-package-lock
+      && npm run dev
+      && npm run watch
+      "
+    networks:
+      - web-proxy
+  ht-sejong-web:
+    #user: "${UID}:${GID}"
+    build:
+      context: .
+      dockerfile: ./web/Dockerfile
+    volumes:
+      - "../../:/var/www/html:rw"
+      - "./web/php.ini:/usr/local/etc/php/php.ini"
+    environment:
+      - "TZ=Asia/Seoul"
+    ports:
+      - "8084:80"
+    depends_on:
+      - ht-sejong-builder
+    networks:
+      - web-proxy
+  ht-sejong-scheduler:
+    image: ht-ars-php:latest
+    volumes:
+      - "../../:/var/www/html:rw"
+      - "./scheduler/php.ini:/usr/local/etc/php/php.ini"
+    environment:
+      - "TZ=Asia/Seoul"
+    command: bash -c "
+      while [ true ];
+      do
+      (php /var/www/html/artisan schedule:run --verbose --no-interaction &);
+      sleep 60;
+      done
+      "
+    networks:
+      - web-proxy
+  ht-sejong-worker:
+    image: ht-ars-php:latest
+    volumes:
+      - "../../:/var/www/html:rw"
+      - "./worker/php.ini:/usr/local/etc/php/php.ini"
+    environment:
+      - "TZ=Asia/Seoul"
+    depends_on:
+      - ht-sejong-redis
+    command: php /var/www/html/artisan queue:work --queue=default --tries=1
+    networks:
+      - web-proxy
+  ht-sejong-echo:
+    build:
+      context: .
+      dockerfile: ./echo/Dockerfile
+    volumes:
+      - "./echo/????????????????????????.???:/home/????????????????????????.???"
+    environment:
+      - "LARAVEL_ECHO_SERVER_CONFIG_PATH=/etc/laravel-echo-server.json"
+      - "REDIS_ARS_CTI_HOST=????????????????????????"
+      - "REDIS_ARS_CTI_PORT=????????????????????????"
+      - "REDIS_ARS_CTI_PASSWORD=????????????????????????"
+      - "REDIS_ARS_CTI_IV=????????????????????????"
+    ports:
+      - "6001:6001"
+    external_links:
+      - reverse-proxy_proxy
+    depends_on:
+      - ht-sejong-redis
+    networks:
+      - web-proxy
+  ht-sejong-swagger-ui:
+    image: swaggerapi/swagger-ui
+    volumes:
+      - "./swagger-ui/swagger.json:/app/swagger.json:rw"
+    environment:
+      - "WITH_CREDENTIALS=true"
+    ports:
+      - "8091:8080"
+    networks:
+      - web-proxy
+volumes:
+  node-modules:
+    driver: local
+networks:
+  web-proxy:
+    external: true
